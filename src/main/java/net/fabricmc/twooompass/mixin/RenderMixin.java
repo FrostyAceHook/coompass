@@ -20,14 +20,10 @@ public class RenderMixin extends DrawableHelper {
 
     private static int pad = 2;
 
-    private static int box_w = 80;
-    private static int box_h = 4*pad + 9*3;
-
-    private static int dy[] = { pad + 1, 2*pad + 9, 3*pad + 9*2 };
     private static int compass_w = 20;
 
-
     private int x = 0, y = 0, z = 0;
+    private float yaw = 0f, pitch = 0f;
     private int dir = 0, dir_last = -1;
 
     private String yaw_x, yaw_f, yaw_z;
@@ -39,11 +35,17 @@ public class RenderMixin extends DrawableHelper {
             y = MathHelper.floor(client.player.y);
             z = MathHelper.floor(client.player.z);
 
-            float temp = client.player.yaw;
-            temp += 45f/2f; // for rounding reasons.
-            temp %= 360f;
-            if (temp < 0f) temp += 360f; // Bruh why can't % just be good.
-            dir = (int)(temp/45f); // [0,7] where 0 = south (+z), 2 = west (-x).
+            // map yaw to -180..180
+            yaw = (client.player.yaw % 360f);
+            if (yaw > 180f) yaw -= 360f;
+            if (yaw < -180f) yaw += 360f;
+            // pitch should be right as-is.
+            pitch = client.player.pitch;
+
+            float tmp = yaw;
+            if (tmp < 0f) tmp += 360f; // in 0..360.
+            tmp = ((tmp + 45f/2f) % 360f); // for rounding reasons.
+            dir = (int)(tmp/45f); // [0,7] where 0 = south (+z), 2 = west (-x).
         }
 
         // Set strings.
@@ -112,6 +114,15 @@ public class RenderMixin extends DrawableHelper {
         if (Twooompass.disable_on_f3 && client.options.debugEnabled)
             return;
 
+        // Too long to type out.
+        boolean show_coords = Twooompass.show_coords;
+        boolean show_compass = Twooompass.show_compass;
+        boolean show_yaw = Twooompass.show_yaw;
+        boolean show_pitch = Twooompass.show_pitch;
+        if (!show_coords && !show_compass && !show_yaw && !show_pitch)
+            return; // headout.
+
+
         // Set things.
         set_vars();
 
@@ -121,7 +132,11 @@ public class RenderMixin extends DrawableHelper {
         int h = (client.height + scale - 1) / scale;
 
 
-        // Box position.
+        // Box dimensions.
+        int num_items = ((show_coords || show_compass)?3:0) + (show_yaw?1:0) + (show_pitch?1:0);
+        int box_w = ((show_coords || show_yaw || show_pitch) ? 52 : 0) + ((show_coords && show_compass) ? 8 + compass_w : 0)
+                + ((show_compass && (!show_coords && !show_yaw && !show_pitch)) ? 4 + compass_w : 0);
+        int box_h = 9*num_items + (num_items + 2)*pad + ((num_items > 3) ? 2*pad : 0);
         int box_x = (w - box_w) * Twooompass.pos[0] / 100;
         int box_y = (h - box_h) * Twooompass.pos[1] / 100;
 
@@ -135,19 +150,61 @@ public class RenderMixin extends DrawableHelper {
             compass_x = box_x + 2 * pad;
             coords_x = compass_x + compass_w;
         }
+        // Move compass left if no coords.
+        if (!show_coords)
+            compass_x = coords_x;
 
 
         // Background.
         fill(box_x, box_y, box_x + box_w, box_y + box_h, Twooompass.bg_col);
 
-        // Coords.
-        render_text("X: "+Integer.toString(x), coords_x, box_y + dy[0]);
-        render_text("Y: "+Integer.toString(y), coords_x, box_y + dy[1]);
-        render_text("Z: "+Integer.toString(z), coords_x, box_y + dy[2]);
+        // The full display might look like:
+        // X: ***      ++
+        // Y: ***      D
+        // Z: ***      --
+        //
+        // T: **.*
+        // P: **.*
 
-        // Compass.
-        render_text(yaw_x, compass_x, box_y + dy[0]);
-        render_text(yaw_f, compass_x, box_y + dy[1]);
-        render_text(yaw_z, compass_x, box_y + dy[2]);
+        int dy = pad; // just lines things up better.
+
+        // Coords + compass.
+        dy += pad;
+        if (Twooompass.show_coords)
+            render_text(Twooompass.name_x+": "+Integer.toString(x), coords_x, box_y + dy);
+        if (Twooompass.show_compass)
+            render_text(yaw_x, compass_x, box_y + dy);
+        if (Twooompass.show_coords || Twooompass.show_compass)
+            dy += 9 + pad;
+        if (Twooompass.show_coords)
+            render_text(Twooompass.name_y+": "+Integer.toString(y), coords_x, box_y + dy);
+        if (Twooompass.show_compass)
+            render_text(yaw_f, compass_x, box_y + dy);
+        if (Twooompass.show_coords || Twooompass.show_compass)
+            dy += 9 + pad;
+        if (Twooompass.show_coords)
+            render_text(Twooompass.name_z+": "+Integer.toString(z), coords_x, box_y + dy);
+        if (Twooompass.show_compass)
+            render_text(yaw_z, compass_x, box_y + dy);
+        if (Twooompass.show_coords || Twooompass.show_compass)
+            dy += 9 + pad;
+
+        // Direction.
+        if (Twooompass.show_coords || Twooompass.show_compass)
+            dy += 2*pad;
+        if (Twooompass.show_yaw) {
+            String yaw_str = String.format("%.1f", yaw);
+            if (yaw_str.equals("-0.0")) yaw_str = "0.0"; // classic.
+            render_text(Twooompass.name_yaw+": "+yaw_str, coords_x, box_y + dy);
+            dy += 9 + pad;
+        }
+        if (Twooompass.show_pitch) {
+            String pitch_str = String.format("%.1f", pitch);
+            if (pitch_str.equals("-0.0")) pitch_str = "0.0";
+            render_text(Twooompass.name_pitch+": "+pitch_str, coords_x, box_y + dy);
+            dy += 9 + pad;
+        }
+
+        // some of the most heinous code ever written ngl.
     }
 }
